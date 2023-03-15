@@ -1,6 +1,70 @@
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using projectef;
+
 var builder = WebApplication.CreateBuilder(args);
+
+//builder.Services.AddDbContext<TaskContext>(p => p.UseInMemoryDatabase("TasksDB"));
+builder.Services.AddSqlServer<TaskContext>(builder.Configuration.GetConnectionString("cnTasks"));
+
+
 var app = builder.Build();
 
 app.MapGet("/", () => "Hello World!");
+
+app.MapGet("/dbconnection", async ([FromServices] TaskContext dbContext) =>
+{
+    dbContext.Database.EnsureCreated();
+    return Results.Ok("Base de datos en memoria " + dbContext.Database.IsInMemory());
+});
+
+app.MapGet("/api/tasks", async ([FromServices] TaskContext dbContext) =>
+{
+    return Results.Ok(dbContext.Tasks.Include(p => p.Category));
+});
+
+app.MapPost("/api/tasks", async ([FromServices] TaskContext dbContext, [FromBody] projectef.Models.Task task) =>
+{
+    task.TaskId = Guid.NewGuid();
+    task.CreateDate = DateTime.Now;
+    await dbContext.AddAsync(task);
+    await dbContext.SaveChangesAsync();
+
+    return Results.Ok();
+});
+
+app.MapPut("/api/tasks/{id}", async ([FromServices] TaskContext dbContext, [FromBody] projectef.Models.Task task, [FromRoute] Guid id) =>
+{
+    var taskActual = dbContext.Tasks.Find(id);
+
+    if (taskActual != null)
+    {
+        taskActual.CategoryId = task.CategoryId;
+        taskActual.Title = task.Title;
+        taskActual.PriorityTask = task.PriorityTask;
+        taskActual.Description = task.Description;
+
+        await dbContext.SaveChangesAsync();
+        return Results.Ok();
+    }
+
+    return Results.NotFound();
+});
+
+app.MapDelete("/api/tasks/{id}", async ([FromServices] TaskContext dbContext, [FromRoute] Guid id) =>
+{
+    var taskActual = dbContext.Tasks.Find(id);
+
+    if (taskActual != null)
+    {
+        dbContext.Remove(taskActual);
+        await dbContext.SaveChangesAsync();
+        return Results.Ok();
+    }
+
+    return Results.NotFound();
+});
+
+
 
 app.Run();
